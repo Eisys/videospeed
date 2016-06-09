@@ -22,18 +22,9 @@
   },
   "content_scripts": [{
       "all_frames": true,
-      "matches": [ "http://*/*", "https://*/*", "file:///*"],
-      "exclude_matches": [
-        "https://plus.google.com/hangouts/*",
-        "https://hangouts.google.com/hangouts/*",
-        "https://teamtreehouse.com/*",
-        "https://www.instagram.com/*",
-        "https://www.twitter.com/*",
-        "https://www.lynda.com/*",
-        "http://www.hitbox.tv/*",
-        "https://twitter.com/*",
-        "https://www.reddit.com/*",
-        "https://vine.co/*"
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
       ],
       "css": [ "inject.css" ],
       "js":  [ "inject.js" ]
