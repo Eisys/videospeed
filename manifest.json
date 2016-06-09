@@ -31,6 +31,8 @@
         "https://www.twitter.com/*",
         "https://www.lynda.com/*",
         "http://www.hitbox.tv/*",
+        "https://twitter.com/*",
+        "https://www.reddit.com/*",
         "https://vine.co/*"
       ],
       "css": [ "inject.css" ],
