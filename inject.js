@@ -3,15 +3,15 @@ chrome.extension.sendMessage({}, function(response) {
   var tc = {
     settings: {
       speed: 1.0,          // default 1x
-      speedStep: 0.1,      // default 0.1x
+      speedStep: 0.25,      // default 0.1x
       rewindTime: 10,      // default 10s
       advanceTime: 10,     // default 10s
-      resetKeyCode:  82,   // default: R
-      slowerKeyCode: 83,   // default: S
-      fasterKeyCode: 68,   // default: D
+      resetKeyCode:  106,   // default: R
+      slowerKeyCode: 109,   // default: S
+      fasterKeyCode: 107,   // default: D
       rewindKeyCode: 90,   // default: Z
       advanceKeyCode: 88,  // default: X
-      rememberSpeed: false // default: false
+      rememberSpeed: true  // default: false
     }
   };
 
@@ -278,8 +278,8 @@ chrome.extension.sendMessage({}, function(response) {
 
     // TODO : if controller is visible, do not start animation.
     controllerAnimation = controller.animate([
-      {opacity: 0.3},
-      {opacity: 0.3},
+      {opacity: 0.7},
+      {opacity: 0.5},
       {opacity: 0.0},
     ], {
       duration: 2000,
