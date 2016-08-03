@@ -1,21 +1,26 @@
 chrome.extension.sendMessage({}, function(response) {
-
   var tc = {
     settings: {
-      speed: 1.0,          // default 1x
-      speedStep: 0.25,      // default 0.1x
-      rewindTime: 10,      // default 10s
-      advanceTime: 10,     // default 10s
-      resetKeyCode:  106,   // default: R
-      slowerKeyCode: 109,   // default: S
-      fasterKeyCode: 107,   // default: D
-      rewindKeyCode: 90,   // default: Z
-      advanceKeyCode: 88,  // default: X
-      rememberSpeed: true  // default: false
+      speed: 1.0,           // default 1x
+      speedStep: 0.1,       // default 0.1x
+      rewindTime: 10,       // default 10s
+      advanceTime: 10,      // default 10s
+      resetKeyCode:  82,    // default: R
+      slowerKeyCode: 83,    // default: S
+      fasterKeyCode: 68,    // default: D
+      rewindKeyCode: 90,    // default: Z
+      advanceKeyCode: 88,   // default: X
+      displayKeyCode: 86,   // default: V
+      rememberSpeed: false, // default: false
+      blacklist: `
+        www.instagram.com
+        www.twitter.com
+        vine.co
+        imgur.com
+      `.replace(/^\s+|\s+$/gm,'')
     }
   };
 
-  var controllerAnimation;
   chrome.storage.sync.get(tc.settings, function(storage) {
     tc.settings.speed = Number(storage.speed);
     tc.settings.speedStep = Number(storage.speedStep);
@@ -25,15 +30,22 @@ chrome.extension.sendMessage({}, function(response) {
     tc.settings.rewindKeyCode = Number(storage.rewindKeyCode);
     tc.settings.slowerKeyCode = Number(storage.slowerKeyCode);
     tc.settings.fasterKeyCode = Number(storage.fasterKeyCode);
+    tc.settings.displayKeyCode = Number(storage.displayKeyCode);
     tc.settings.advanceKeyCode = Number(storage.advanceKeyCode);
     tc.settings.rememberSpeed = Boolean(storage.rememberSpeed);
+    tc.settings.blacklist = String(storage.blacklist);
+
+    initializeWhenReady(document);
   });
+
+  var forEach = Array.prototype.forEach;
 
   function defineVideoController() {
     tc.videoController = function(target, parent) {
       this.video = target;
       this.parent = target.parentElement || parent;
       this.document = target.ownerDocument;
+      this.id = Math.random().toString(36).substr(2, 9);
       if (!tc.settings.rememberSpeed) {
         tc.settings.speed = 1.0;
       }
@@ -66,99 +78,88 @@ chrome.extension.sendMessage({}, function(response) {
 
     tc.videoController.prototype.initializeControls = function() {
       var document = this.document;
+      var speed = parseFloat(tc.settings.speed).toFixed(2),
+        top = Math.max(this.video.offsetTop, 0) + "px",
+        left = Math.max(this.video.offsetLeft, 0) + "px";
 
+      var prevent = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      var wrapper = document.createElement('div');
+      wrapper.classList.add('vsc-controller');
+      wrapper.dataset['vscid'] = this.id;
+      wrapper.addEventListener('dblclick', prevent, true);
+      wrapper.addEventListener('mousedown', prevent, true);
+      wrapper.addEventListener('click', prevent, true);
+
+      var shadow = wrapper.createShadowRoot();
+      var shadowTemplate = `
+        <style>
+          @import "${chrome.extension.getURL('shadow.css')}";
+        </style>
+
+        <div id="controller" style="top:${top}; left:${left}">
+          <span data-action="drag" class="draggable">${speed}</span>
+          <span id="controls">
+            <button data-action="rewind" class="rw">«</button>
+            <button data-action="slower">-</button>
+            <button data-action="faster">+</button>
+            <button data-action="advance" class="rw">»</button>
+            <button data-action="close" class="hideButton">x</button>
+          </span>
+        </div>
+      `;
+      shadow.innerHTML = shadowTemplate;
+      shadow.querySelector('.draggable').addEventListener('mousedown', (e) => {
+        runAction(e.target.dataset['action'], document);
+      });
+
+      forEach.call(shadow.querySelectorAll('button'), function(button) {
+        button.onclick = (e) => {
+          runAction(e.target.dataset['action'], document);
+        }
+      });
+
+      this.speedIndicator = shadow.querySelector('span');
       var fragment = document.createDocumentFragment();
-      var container = document.createElement('div');
-
-      var shadow = container.createShadowRoot();
-      shadow.innerHTML = '<style> @import "' +
-        chrome.extension.getURL('shadow.css') +
-        '"; </style>';
-
-      var speedIndicator = document.createElement('span');
-      var controls = document.createElement('span');
-      var fasterButton = document.createElement('button');
-      var slowerButton = document.createElement('button');
-      var rewindButton = document.createElement('button');
-      var advanceButton = document.createElement('button');
-      var hideButton = document.createElement('button');
-
-      rewindButton.innerHTML = '&laquo;';
-      rewindButton.className = 'rw';
-      rewindButton.addEventListener('click', function(e) {
-        runAction('rewind', document);
-      });
-
-      fasterButton.textContent = '+';
-      fasterButton.addEventListener('click', function(e) {
-        runAction('faster', document);
-      });
-
-      slowerButton.textContent = '-';
-      slowerButton.addEventListener('click', function(e) {
-        runAction('slower', document);
-      });
-
-      advanceButton.innerHTML = '&raquo;';
-      advanceButton.className = 'rw';
-      advanceButton.addEventListener('click', function(e) {
-        runAction('advance', document);
-      });
-
-      hideButton.textContent = 'x';
-      hideButton.className = 'tc-hideButton';
-      hideButton.addEventListener('click', function(e) {
-        container.nextSibling.classList.add('vc-cancelled')
-        container.remove();
-      });
-
-      controls.appendChild(rewindButton);
-      controls.appendChild(slowerButton);
-      controls.appendChild(fasterButton);
-      controls.appendChild(advanceButton);
-      controls.appendChild(hideButton);
-
-      shadow.appendChild(speedIndicator);
-      shadow.appendChild(controls);
-
-      container.classList.add('tc-videoController');
-      controls.classList.add('tc-controls');
-      container.style.top = Math.max(this.video.offsetTop,0)+"px";
-      container.style.left = Math.max(this.video.offsetLeft,0)+"px";
-
-      fragment.appendChild(container);
-      this.video.classList.add('tc-initialized');
+      fragment.appendChild(wrapper);
 
       // Note: when triggered via a MutationRecord, it's possible that the
       // target is not the immediate parent. This appends the controller as
       // the first element of the target, which may not be the parent.
       this.parent.insertBefore(fragment, this.parent.firstChild);
-
-      var speed = parseFloat(tc.settings.speed).toFixed(2);
-      speedIndicator.textContent = speed;
-      this.speedIndicator = speedIndicator;
-
-      container.addEventListener('dblclick', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }, true);
-
-      container.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }, true);
-
-      container.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }, true);
-
+      this.video.classList.add('vsc-initialized');
+      this.video.dataset['vscid'] = this.id;
     }
   }
 
   function initializeWhenReady(document) {
+    escapeStringRegExp.matchOperatorsRe = /[|\\{}()[\]^$+*?.]/g;
+    function escapeStringRegExp(str) {
+      return str.replace(escapeStringRegExp.matchOperatorsRe, '\\$&');
+    }
+
+    var blacklisted = false;
+    tc.settings.blacklist.split("\n").forEach(match => {
+      match = match.replace(/^\s+|\s+$/g,'')
+      if (match.length == 0) {
+        return;
+      }
+
+      var regexp = new RegExp(escapeStringRegExp(match));
+      if (regexp.test(location.href)) {
+        blacklisted = true;
+        return;
+      }
+    })
+
+    if (blacklisted)
+      return;
+
     var readyStateCheckInterval = setInterval(function() {
-      if (document.readyState === 'complete') {
+      if (document && document.readyState === 'complete') {
         clearInterval(readyStateCheckInterval);
         initializeNow(document);
       }
@@ -179,6 +180,16 @@ chrome.extension.sendMessage({}, function(response) {
       document.addEventListener('keydown', function(event) {
         var keyCode = event.keyCode;
 
+        // Ignore if following modifier is active.
+        if (event.getModifierState("Alt")
+            || event.getModifierState("Control")
+            || event.getModifierState("Fn")
+            || event.getModifierState("Meta")
+            || event.getModifierState("Hyper")
+            || event.getModifierState("OS")) {
+          return;
+        }
+
         // Ignore keydown event if typing in an input box
         if ((document.activeElement.nodeName === 'INPUT'
               && document.activeElement.getAttribute('type') === 'text')
@@ -196,28 +207,47 @@ chrome.extension.sendMessage({}, function(response) {
           runAction('slower', document, true)
         } else if (keyCode == tc.settings.resetKeyCode) {
           runAction('reset', document, true)
+        } else if (keyCode == tc.settings.displayKeyCode) {
+          runAction('display', document, true)
         }
 
         return false;
       }, true);
 
-      var forEach = Array.prototype.forEach;
-      function checkForVideo(node, parent) {
+      function checkForVideo(node, parent, added) {
         if (node.nodeName === 'VIDEO') {
-          if (!node.classList.contains('tc-initialized')) {
-            new tc.videoController(node, parent);
+          if (added) {
+            if (!node.classList.contains('vsc-initialized')) {
+              new tc.videoController(node, parent);
+            }
+          } else {
+            if (node.classList.contains('vsc-initialized')) {
+              let id = node.dataset['vscid'];
+              let ctrl = document.querySelector(`div[data-vscid="${id}"]`)
+              if (ctrl) {
+                ctrl.remove();
+              }
+            }
           }
         } else if (node.children != undefined) {
           for (var i = 0; i < node.children.length; i++) {
             checkForVideo(node.children[i],
-                          node.children[i].parentNode || parent);
+                          node.children[i].parentNode || parent,
+                          added);
           }
         }
       }
       var observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
           forEach.call(mutation.addedNodes, function(node) {
-            checkForVideo(node, node.parentNode || mutation.target);
+            if (typeof node === "function")
+              return;
+            checkForVideo(node, node.parentNode || mutation.target, true);
+          })
+          forEach.call(mutation.removedNodes, function(node) {
+            if (typeof node === "function")
+              return;
+            checkForVideo(node, node.parentNode || mutation.target, false);
           })
         });
       });
@@ -236,15 +266,18 @@ chrome.extension.sendMessage({}, function(response) {
       });
   }
 
-  function runAction(action, document, keyboard = false) {
+  function runAction(action, document, keyboard) {
     var videoTags = document.getElementsByTagName('video');
     videoTags.forEach = Array.prototype.forEach;
 
     videoTags.forEach(function(v) {
-      if (keyboard)
-        showController(v);
+      var id = v.dataset['vscid'];
+      var controller = document.querySelector(`div[data-vscid="${id}"]`);
 
-      if (!v.classList.contains('vc-cancelled')) {
+      if (keyboard)
+        showController(controller);
+
+      if (!v.classList.contains('vsc-cancelled')) {
         if (action === 'rewind') {
           v.currentTime -= tc.settings.rewindTime;
         } else if (action === 'advance') {
@@ -261,32 +294,64 @@ chrome.extension.sendMessage({}, function(response) {
           v.playbackRate = Number(s.toFixed(2));
         } else if (action === 'reset') {
           v.playbackRate = 1.0;
+        } else if (action === 'close') {
+          v.classList.add('vsc-cancelled');
+          controller.remove();
+        } else if (action === 'display') {
+          controller.classList.add('vsc-manual');
+          controller.classList.toggle('vsc-hidden');
+        } else if (action === 'drag') {
+          handleDrag(v, controller);
         }
       }
     });
   }
 
-  function showController(v) {
-    var controller = v.closest('.tc-videoController ~ .tc-initialized')
-      .parentElement.getElementsByClassName('tc-videoController')[0];
+ function handleDrag(video, controller) {
+    const parentElement = controller.parentElement,
+      boundRect = parentElement.getBoundingClientRect(),
+      shadowController = controller.shadowRoot.querySelector('#controller'),
+      drag = shadowController.querySelector('.draggable'),
+      offsetLeft = boundRect.left + drag.offsetLeft + drag.offsetWidth,
+      offsetTop = boundRect.top + drag.offsetTop + drag.offsetHeight;
 
-    controller.style.visibility = 'visible';
-    if (controllerAnimation != null
-        && controllerAnimation.playState != 'finished') {
-      controllerAnimation.cancel();
+    video.classList.add('vcs-dragging');
+    shadowController.classList.add('dragging');
+
+    const startDragging = (e) => {
+      let newLeft = Math.max(0, e.clientX - offsetLeft);
+      let newTop = Math.max(0, e.clientY - offsetTop);
+
+      shadowController.style.left = newLeft + 'px';
+      shadowController.style.top = newTop + 'px';
     }
 
-    // TODO : if controller is visible, do not start animation.
-    controllerAnimation = controller.animate([
-      {opacity: 0.7},
-      {opacity: 0.5},
-      {opacity: 0.0},
-    ], {
-      duration: 2000,
-      iterations: 1,
-      delay: 0
-    });
+    const stopDragging = () => {
+      parentElement.removeEventListener('mousemove', startDragging);
+      parentElement.removeEventListener('mouseup', stopDragging);
+      parentElement.removeEventListener('mouseleave', stopDragging);
+
+      shadowController.classList.remove('dragging');
+      video.classList.remove('vcs-dragging');
+    }
+
+    parentElement.addEventListener('mouseup',stopDragging);
+    parentElement.addEventListener('mouseleave',stopDragging);
+    parentElement.addEventListener('mousemove', startDragging);
   }
 
-  initializeWhenReady(document);
+  var timer;
+  var animation = false;
+  function showController(controller) {
+    controller.classList.add('vcs-show');
+
+    if (animation)
+      clearTimeout(timer);
+
+    animation = true;
+    timer = setTimeout(function() {
+      controller.classList.remove('vcs-show');
+      animation = false;
+    }, 2000);
+  }
 });
